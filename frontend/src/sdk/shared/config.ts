@@ -86,7 +86,7 @@ const DefaultTexts: Texts<{ de: string; en: string; tr: string }> = {
         tr: 'Beni E-posta ile bilgilendir',
     },
     notifyBeWebPush: {
-        de: 'Benachrichtige mich per Push Notification',
+        de: 'Benachrichtige mich per Push Nachricht',
         en: 'Notify me via Push Notification',
         tr: 'Beni anlık bildirim ile bilgilendir',
     },
@@ -141,7 +141,7 @@ const DefaultTexts: Texts<{ de: string; en: string; tr: string }> = {
         tr: 'Başlıklar',
     },
     unsubscribe: {
-        de: 'Deabbonieren',
+        de: 'Abmelden',
         en: 'Unsubscribe',
         tr: 'Abonelikten ayrıl',
     },
@@ -151,12 +151,12 @@ const DefaultTexts: Texts<{ de: string; en: string; tr: string }> = {
         tr: 'Web Anlık Bildirimi',
     },
     webpushConfirmText: {
-        de: 'Notifications können jederzeit in den Browser Einstellungen deaktiviert werden.',
+        de: 'Benachrichtigungen können jederzeit in den Browser Einstellungen deaktiviert werden.',
         en: 'Notifications can be turned off anytime from browser settings.',
         tr: 'Bildirimler tarayıcı ayarlarından istediğiniz zaman kapatılabilir.',
     },
     webpushConfirmTitle: {
-        de: 'Wir wollen dir Push Benachrichtigungen schenken',
+        de: 'Wir wollen dir Push Benachrichtigungen senden.',
         en: 'We want to send you push notifications.',
         tr: 'Size anlık bildirimleri gönderebilmek istiyoruz.',
     },
