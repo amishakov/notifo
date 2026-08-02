@@ -6,7 +6,6 @@
 // ==========================================================================
 
 using Microsoft.AspNetCore.Mvc;
-using Notifo.Domain.Identity;
 using Notifo.Infrastructure.Diagnostics;
 using Notifo.Pipeline;
 
@@ -16,6 +15,7 @@ namespace Notifo.Areas.Api.Controllers.Diagnostics;
 /// Makes a diagnostics request.
 /// </summary>
 [ApiExplorerSettings(GroupName = nameof(Diagnostics))]
+[LocalhostOnly]
 public sealed class DiagnosticsController(Diagnoser dumper) : BaseController
 {
     /// <summary>
@@ -25,7 +25,6 @@ public sealed class DiagnosticsController(Diagnoser dumper) : BaseController
     /// <response code="501">Not configured.</response>.
     [HttpGet]
     [Route("api/diagnostics/dump")]
-    [AuthorizeHostAdmin]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> GetDump()
     {
@@ -45,7 +44,6 @@ public sealed class DiagnosticsController(Diagnoser dumper) : BaseController
     /// <response code="501">Not configured.</response>.
     [HttpGet]
     [Route("api/diagnostics/gcdump")]
-    [AuthorizeHostAdmin]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> GetGCDump()
     {
