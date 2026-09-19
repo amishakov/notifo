@@ -166,8 +166,8 @@ public sealed class MessagingChannel(
                 }
 
                 var result = await SendCoreAsync(commonApp, message!, integrations, ct);
-
-                if (result.Status > DeliveryStatus.Attempt)
+                // Skipped is lower than Attempt, but must also be tracked.
+                if (result.Status is not DeliveryStatus.Unknown and not DeliveryStatus.Attempt)
                 {
                     await UpdateAsync(jobs, result);
                 }
@@ -185,14 +185,14 @@ public sealed class MessagingChannel(
     {
         var lastResult = default(DeliveryResult);
 
-        foreach (var (_, context, sender) in integrations)
+        foreach (var (integrationId, context, sender) in integrations)
         {
             try
             {
-                var result = await sender.SendAsync(context, message, ct);
+                lastResult = await sender.SendAsync(context, message, ct);
 
                 // We only sent notifications over the first successful integration.
-                if (result.Status >= DeliveryStatus.Sent)
+                if (lastResult.Status >= DeliveryStatus.Sent)
                 {
                     break;
                 }
@@ -208,7 +208,7 @@ public sealed class MessagingChannel(
             {
                 await LogStore.LogAsync(appId, LogMessage.General_InternalException(sender.Definition.Type, ex));
 
-                if (sender == integrations[^1].System)
+                if (integrationId == integrations[^1].Id)
                 {
                     throw;
                 }

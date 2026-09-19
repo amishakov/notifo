@@ -90,23 +90,11 @@ public sealed class WebPushChannel : SchedulingChannelBase<WebPushJob, WebPushCh
 
             var job = new WebPushJob(notification, context, subscription, serializer);
 
-            // Do not use scheduling when the notification is an update.
-            if (context.IsUpdate)
-            {
-                await Scheduler.ScheduleAsync(
-                    job.ScheduleKey,
-                    job,
-                    default(Instant),
-                    false, ct);
-            }
-            else
-            {
-                await Scheduler.ScheduleAsync(
-                    job.ScheduleKey,
-                    job,
-                    job.SendDelay,
-                    false, ct);
-            }
+            await Scheduler.ScheduleAsync(
+                job.ScheduleKey,
+                job,
+                job.SendDelay,
+                false, ct);
         }
     }
 
@@ -143,12 +131,23 @@ public sealed class WebPushChannel : SchedulingChannelBase<WebPushJob, WebPushCh
     private async Task<DeliveryResult> SendCoreAsync(WebPushJob job,
         CancellationToken ct)
     {
+        if (job.Subscription.Keys?.TryGetValue("p256dh", out var publicKey) != true || !job.Subscription.Keys.TryGetValue("auth", out var authKey))
+        {
+            // Use the same log message for the delivery result later.
+            var invalidMessage = LogMessage.WebPush_TokenInvalid(Name, job.Notification.UserId, job.Subscription.Endpoint);
+
+            await LogStore.LogAsync(job.Notification.AppId, invalidMessage);
+            await RemoveTokenAsync(job);
+
+            return DeliveryResult.Failed(invalidMessage.Reason);
+        }
+
         try
         {
             var pushSubscription = new PushSubscription(
                 job.Subscription.Endpoint,
-                job.Subscription.Keys["p256dh"],
-                job.Subscription.Keys["auth"]);
+                publicKey,
+                authKey);
 
             var json = job.Payload;
 
@@ -164,6 +163,11 @@ public sealed class WebPushChannel : SchedulingChannelBase<WebPushJob, WebPushCh
             await RemoveTokenAsync(job);
 
             return DeliveryResult.Failed(logMessage.Reason);
+        }
+        catch (WebPushException ex) when (ex.StatusCode.IsTransient())
+        {
+            // Let the scheduler retry temporary errors instead of failing the notification permanently.
+            throw;
         }
         catch (WebPushException ex)
         {

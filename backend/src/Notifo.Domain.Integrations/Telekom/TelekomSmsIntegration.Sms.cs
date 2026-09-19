@@ -19,7 +19,7 @@ public sealed partial class TelekomSmsIntegration : ISmsSender, IIntegrationHook
     public async Task<DeliveryResult> SendAsync(IntegrationContext context, SmsMessage message,
         CancellationToken ct)
     {
-        var phoneNumberFrom = PhoneNumberProperty.GetString(context.Properties);
+        var phoneNumberFrom = PhoneNumberProperty.GetNumber(context.Properties).ToString(CultureInfo.InvariantCulture);
         var phoneNumberTo = message.To;
 
         var apiKey = ApiKeyProperty.GetString(context.Properties);
@@ -43,6 +43,19 @@ public sealed partial class TelekomSmsIntegration : ISmsSender, IIntegrationHook
             httpRequest.Headers.TryAddWithoutValidation("Authorization", apiKey);
 
             var response = await httpClient.SendAsync(httpRequest, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+
+                if (response.StatusCode.IsTransient())
+                {
+                    throw new HttpIntegrationException(body, (int)response.StatusCode);
+                }
+
+                var errorMessage = string.Format(CultureInfo.CurrentCulture, Texts.Telekom_Error, phoneNumberTo, body);
+
+                throw new DomainException(errorMessage);
+            }
 
             var result = await response.Content.ReadFromJsonAsync<Response>((JsonSerializerOptions?)null, ct);
 
@@ -54,6 +67,15 @@ public sealed partial class TelekomSmsIntegration : ISmsSender, IIntegrationHook
             }
 
             return DeliveryResult.Sent;
+        }
+        catch (DomainException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex.IsTransient())
+        {
+            // Let the scheduler retry temporary errors instead of failing the notification permanently.
+            throw;
         }
         catch (Exception ex)
         {

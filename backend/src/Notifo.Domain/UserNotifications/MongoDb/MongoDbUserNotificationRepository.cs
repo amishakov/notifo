@@ -132,7 +132,7 @@ public sealed class MongoDbUserNotificationRepository(
                     Filter.Eq(x => x.Id, id),
                     Filter.Or(
                         Filter.Exists(x => x.FirstConfirmed),
-                        Filter.Eq($"Channels.{channel}.Status.{configurationId}.Status", DeliveryStatus.Handled)));
+                        IsHandledFilter(channel, configurationId)));
 
             var count =
                 await Collection.Find(filter).Limit(1)
@@ -152,7 +152,7 @@ public sealed class MongoDbUserNotificationRepository(
                     Filter.Eq(x => x.Id, id),
                     Filter.Or(
                         Filter.Exists(x => x.FirstSeen),
-                        Filter.Eq($"Channels.{channel}.Status.{configurationId}.Status", DeliveryStatus.Handled)));
+                        IsHandledFilter(channel, configurationId)));
 
             var count =
                 await Collection.Find(filter).Limit(1)
@@ -170,7 +170,7 @@ public sealed class MongoDbUserNotificationRepository(
             var filter =
                 Filter.And(
                     Filter.Eq(x => x.Id, id),
-                    Filter.Eq($"Channels.{channel}.Status.{configurationId}.Status", DeliveryStatus.Handled));
+                    IsHandledFilter(channel, configurationId));
 
             var count =
                 await Collection.Find(filter).Limit(1)
@@ -187,7 +187,14 @@ public sealed class MongoDbUserNotificationRepository(
         {
             var filter = BuildFilter(appId, userId, query);
 
-            var resultItems = await Collection.Find(filter).SortByDescending(x => x.Created).ToListAsync(query, ct);
+            // When the query continues from a timestamp, the results must be sorted by the same field.
+            // Otherwise the continuation token would skip the notifications that do not fit on the page.
+            var find =
+                query.After != default ?
+                Collection.Find(filter).SortBy(x => x.Updated) :
+                Collection.Find(filter).SortByDescending(x => x.Created);
+
+            var resultItems = await find.ToListAsync(query, ct);
             var resultTotal = (long)resultItems.Count;
 
             if (query.ShouldQueryTotal(resultItems))
@@ -377,6 +384,16 @@ public sealed class MongoDbUserNotificationRepository(
         }
     }
 
+    private static FilterDefinition<UserNotification> IsHandledFilter(string channel, Guid configurationId)
+    {
+        var path = $"Channels.{channel}.Status.{configurationId}.Status";
+
+        // Older documents have been written with the numeric representation of the status.
+        return Filter.Or(
+            Filter.Eq(path, DeliveryStatus.Handled.ToString()),
+            Filter.Eq(path, (int)DeliveryStatus.Handled));
+    }
+
     private static FilterDefinition<UserNotification> BuildFilter(UserNotification notification)
     {
         var filters = new List<FilterDefinition<UserNotification>>
@@ -416,10 +433,6 @@ public sealed class MongoDbUserNotificationRepository(
         if (!string.IsNullOrWhiteSpace(query.CorrelationId))
         {
             filters.Add(Filter.Eq(x => x.CorrelationId, query.CorrelationId));
-        }
-        else
-        {
-            filters.Add(Filter.Gte(x => x.CorrelationId, null));
         }
 
         AddDefaultFilters(query, filters);

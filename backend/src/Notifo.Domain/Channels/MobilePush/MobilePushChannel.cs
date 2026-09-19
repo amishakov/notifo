@@ -50,7 +50,7 @@ public sealed class MobilePushChannel(IServiceProvider serviceProvider) : Schedu
     {
         using (Telemetry.Activities.StartActivity("MobilePushChannel/HandleSeenAsync"))
         {
-            if (context.Configuration == null || context.Configuration.TryGetValue(Token, out var mobileToken))
+            if (context.Configuration == null || !context.Configuration.TryGetValue(Token, out var mobileToken))
             {
                 // The configuration has no token.
                 return;
@@ -153,6 +153,17 @@ public sealed class MobilePushChannel(IServiceProvider serviceProvider) : Schedu
         }
     }
 
+    protected override Task UpdateAsync(MobilePushJob job, DeliveryResult result)
+    {
+        // Wakeup jobs have no formatting and do not belong to a notification, therefore they must not be tracked.
+        if (job.Notification.Formatting == null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return base.UpdateAsync(job, result);
+    }
+
     protected override async Task SendJobsAsync(List<MobilePushJob> jobs,
         CancellationToken ct)
     {
@@ -187,8 +198,8 @@ public sealed class MobilePushChannel(IServiceProvider serviceProvider) : Schedu
                 var message = BuildMessage(job);
 
                 var result = await SendCoreAsync(job, message, integrations, ct);
-
-                if (result.Status > DeliveryStatus.Attempt)
+                // Skipped is lower than Attempt, but must also be tracked.
+                if (result.Status is not DeliveryStatus.Unknown and not DeliveryStatus.Attempt)
                 {
                     await UpdateAsync(job, result);
                 }
@@ -206,7 +217,7 @@ public sealed class MobilePushChannel(IServiceProvider serviceProvider) : Schedu
     {
         var lastResult = default(DeliveryResult);
 
-        foreach (var (_, context, sender) in integrations)
+        foreach (var (integrationId, context, sender) in integrations)
         {
             try
             {
@@ -239,7 +250,7 @@ public sealed class MobilePushChannel(IServiceProvider serviceProvider) : Schedu
             {
                 await LogStore.LogAsync(job.Notification.AppId, LogMessage.General_InternalException(Name, ex));
 
-                if (sender == integrations[^1].System)
+                if (integrationId == integrations[^1].Id)
                 {
                     throw;
                 }

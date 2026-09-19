@@ -5,6 +5,7 @@
 //  All rights reserved. Licensed under the MIT license.
 // ==========================================================================
 
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 using NodaTime;
@@ -99,12 +100,13 @@ public sealed class MongoDbSchedulerStore<T>(IMongoDatabase database, SchedulerO
             await Collection.UpdateOneAsync(x => x.GroupKey == groupKey && !x.Progressing && x.DueTime <= dueTime,
                 Update
                     .SetOnInsert(x => x.Id, Guid.NewGuid().ToString())
-                    .SetOnInsert(x => x.DueTime, dueTime)
+                    // The batch must not be handled before the delay of the last job has been elapsed.
+                    .Max(x => x.DueTime, dueTime)
                     .SetOnInsert(x => x.GroupKey, groupKey)
                     .SetOnInsert(x => x.Progressing, false)
                     .SetOnInsert(x => x.ProgressingStarted, null)
                     .SetOnInsert(x => x.RetryCount, retryCount)
-                    .Set($"JobsV2.{key}", job),
+                    .Set(JobField(key), job),
                 Upsert, ct);
         }
     }
@@ -117,12 +119,13 @@ public sealed class MongoDbSchedulerStore<T>(IMongoDatabase database, SchedulerO
             await Collection.UpdateOneAsync(x => x.GroupKey == key && !x.Progressing,
                 Update
                     .SetOnInsert(x => x.Id, Guid.NewGuid().ToString())
-                    .SetOnInsert(x => x.DueTime, dueTime)
+                    // A job can be scheduled again with an earlier due time, e.g. for updates.
+                    .Min(x => x.DueTime, dueTime)
                     .SetOnInsert(x => x.GroupKey, key)
                     .SetOnInsert(x => x.Progressing, false)
                     .SetOnInsert(x => x.ProgressingStarted, null)
                     .SetOnInsert(x => x.RetryCount, retryCount)
-                    .Set($"JobsV2.{key}", job),
+                    .Set(JobField(key), job),
                 Upsert, ct);
         }
     }
@@ -152,19 +155,39 @@ public sealed class MongoDbSchedulerStore<T>(IMongoDatabase database, SchedulerO
     {
         using (Telemetry.Activities.StartActivity("MongoDbSchedulerStore/CompleteByKeyAsync"))
         {
+            var jobField = JobField(key);
+
+            // Multiple batches can have the same group key, therefore we have to find the batch that contains the job.
             var result =
-                await Collection.FindOneAndUpdateAsync(x => x.GroupKey == groupKey,
-                    Update.Unset($"JobsV2.{key}"),
+                await Collection.FindOneAndUpdateAsync(
+                    Filter.And(
+                        Filter.Eq(x => x.GroupKey, groupKey),
+                        Filter.Eq(x => x.Progressing, false),
+                        Filter.Exists(jobField)),
+                    Update.Unset(jobField),
                     cancellationToken: ct);
 
-            var hasDeleted = result?.JobsV2?.ContainsKey(key) == true;
-
-            if (result?.JobsV2?.Count == 1 && hasDeleted)
+            if (result == null)
             {
-                await Collection.DeleteOneAsync(x => x.Id == result.Id, ct);
+                return false;
             }
 
-            return hasDeleted;
+            // Only delete the batch if it is still empty, because other jobs could have been added in the meantime.
+            await Collection.DeleteOneAsync(
+                Filter.And(
+                    Filter.Eq(x => x.Id, result.Id),
+                    Filter.Eq(x => x.Progressing, false),
+                    Filter.Eq(x => x.JobsV2, new Dictionary<string, T>()),
+                    Filter.Eq("Jobs", BsonNull.Value)),
+                ct);
+
+            return true;
         }
+    }
+
+    private static string JobField(string key)
+    {
+        // A dot in the key would be interpreted as a path separator and would nest the job in sub documents.
+        return "JobsV2." + key.Replace('.', '_');
     }
 }

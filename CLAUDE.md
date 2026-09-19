@@ -40,11 +40,19 @@ npm run lint
 
 ### Tests
 
-Some tests need external setup (real databases, credentials for integrations) and will fail without it. Run the tests like this to skip these tests.
+Some tests need external setup (credentials for integrations) and are marked with `Category=Dependencies`. Database tests start MongoDB with Testcontainers, need Docker and are marked with `Category=TestContainer`. Run the unit tests like this:
 
 ```bash
-dotnet test --filter "Category!=Dependencies"
+dotnet test --filter "Category!=Dependencies&Category!=TestContainer"
 ```
+
+Run the database tests like this:
+
+```bash
+dotnet test --filter "Category=TestContainer&Category!=Dependencies"
+```
+
+- Database tests use the shared `MongoFixture` (`tests/Notifo.Infrastructure.Tests/Fixtures`) via `[Collection(MongoFixtureCollection.Name)]` and create their repository in `InitializeAsync`.
 
 - Use xUnit assertions (`Assert.Equal`, `Assert.True`, `Assert.Single`, `Assert.Empty`, ...) for simple properties and values.
 - Use FluentAssertions (`Should().BeEquivalentTo(...)`) only for deep, structural comparisons of objects and collections.
@@ -53,9 +61,13 @@ dotnet test --filter "Category!=Dependencies"
 
 - Code style is enforced by StyleCop (`backend/stylecop.json`) and `.editorconfig` — follow the surrounding file's conventions.
 - Do not write XML comments.
+- Do not log `OperationCanceledException`, it is too noisy.
+- Use pattern matching for enums in conditions, for example `if (status is not A and not B)`.
+- Do not add a blank line between a single line assignment and an `if` that checks the assigned value. Keep the blank line when the assignment spans multiple lines.
 
 ## Shared best practices
 
+- Only make changes when you can test them.
 - Do write precise short comments and only when needed.
 - Do not comment a class or a method, only put comments inside functions or above variables.
 - Do not comment properties in general (for example event properties). Only comment behavior inside classes.

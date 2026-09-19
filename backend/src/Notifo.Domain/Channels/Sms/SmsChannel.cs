@@ -112,7 +112,9 @@ public sealed class SmsChannel(
 
             if (app == null)
             {
-                Log.LogWarning("Cannot send email: App not found.");
+                Log.LogWarning("Cannot send sms: App not found.");
+
+                await UpdateAsync(jobs, DeliveryResult.Handled);
                 return;
             }
 
@@ -144,8 +146,8 @@ public sealed class SmsChannel(
                 }
 
                 var result = await SendCoreAsync(commonApp, message!, integrations, ct);
-
-                if (result.Status > DeliveryStatus.Attempt)
+                // Skipped is lower than Attempt, but must also be tracked.
+                if (result.Status is not DeliveryStatus.Unknown and not DeliveryStatus.Attempt)
                 {
                     await UpdateAsync(jobs, result);
                 }
@@ -163,7 +165,7 @@ public sealed class SmsChannel(
     {
         var lastResult = default(DeliveryResult);
 
-        foreach (var (_, context, sender) in integrations)
+        foreach (var (integrationId, context, sender) in integrations)
         {
             try
             {
@@ -186,7 +188,7 @@ public sealed class SmsChannel(
             {
                 await LogStore.LogAsync(appId, LogMessage.General_InternalException(sender.Definition.Type, ex));
 
-                if (sender == integrations[^1].System)
+                if (integrationId == integrations[^1].Id)
                 {
                     throw;
                 }
