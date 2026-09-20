@@ -6,7 +6,6 @@
 // ==========================================================================
 
 using Microsoft.AspNetCore.Mvc;
-using MongoDB.Driver;
 using NodaTime;
 using Notifo.Areas.Api.Controllers.Users.Dtos;
 using Notifo.Domain.Identity;
@@ -250,7 +249,7 @@ public sealed class UsersController(
             return NotFound();
         }
 
-        var command = new RemoveUserAllowedTopic { UserId = id, Prefix = prefix };
+        var command = new RemoveUserAllowedTopic { UserId = id, Prefix = Uri.UnescapeDataString(prefix) };
 
         await Mediator.SendAsync(command, HttpContext.RequestAborted);
         return NoContent();
